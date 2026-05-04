@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Route Video Generator</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; background: #f0f2f5; }
+        #controls { margin-bottom: 20px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: flex; gap: 10px; align-items: center; }
+        #map { width: 800px; height: 450px; border-radius: 12px; border: 5px solid white; box-shadow: 0 8px 24px rgba(0,0,0,0.15); background: #e5e3df; }
+        input { padding: 12px; border: 1px solid #ddd; border-radius: 8px; width: 200px; font-size: 14px; }
+        button { padding: 12px 24px; background: #0078d4; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
+        button:hover { background: #005a9e; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #status { margin-top: 15px; color: #444; font-weight: 500; }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <input type="text" id="start" placeholder="Start City (e.g. New York)">
+        <input type="text" id="end" placeholder="End City (e.g. Miami)">
+        <button id="btn">Generate & Save Video</button>
+    </div>
+    <div id="map"></div>
+    <div id="status">Ready</div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 1. Setup Map
+        const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([40, -74], 4);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        const btn = document.getElementById('btn');
+        const status = document.getElementById('status');
+        let carMarker, routeLine;
+
+        // 2. Location & Routing Functions
+        async function getCoords(city) {
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}`);
+                const data = await res.json();
+                return data.length > 0 ? [data[0].lat, data[0].lon] : null;
+            } catch (e) { return null; }
+        }
+
+        async function getRoute(start, end) {
+            const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`);
+            const data = await res.json();
+            return data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+        }
+
+        // 3. Main Logic
+        btn.onclick = async () => {
+            const startName = document.getElementById('start').value;
+            const endName = document.getElementById('end').value;
+            
+            if (!startName || !endName) return alert("Please enter both cities");
+
+            btn.disabled = true;
+            status.innerText = "Finding locations...";
+
+            const startCoords = await getCoords(startName);
+            const endCoords = await getCoords(endName);
+
+            if (!startCoords || !endCoords) {
+                alert("Location not found. Try adding a country (e.g. 'Paris, France')");
+                btn.disabled = false;
+                return;
+            }
+
+            status.innerText = "Generating path...";
+            const routePoints = await getRoute(startCoords, endCoords);
+
+            // Reset UI
+            if (routeLine) map.removeLayer(routeLine);
+            if (carMarker) map.removeLayer(carMarker);
+            routeLine = L.polyline(routePoints, {color: '#0078d4', weight: 6}).addTo(map);
+            map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
+
+            // 4. Video Recording Setup
+            // We use the map container to capture the stream
+            const stream = document.getElementById('map').captureStream(30);
+            
+            // Check for supported Edge formats
+            const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+            const supportedType = types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+            
+            const recorder = new MediaRecorder(stream, { mimeType: supportedType });
+            const chunks = [];
+
+            recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+            
+            recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'travel-video.webm';
+                document.body.appendChild(a);
+                a.click();
+                
+                // Cleanup
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                }, 100);
+
+                status.innerText = "Success! Video downloaded.";
+                btn.disabled = false;
+            };
+
+            // 5. Start Recording and Animation
+            recorder.start();
+            status.innerText = "Recording trip...";
+
+            carMarker = L.circleMarker(routePoints[0], { radius: 10, color: 'white', fillColor: '#107c10', fillOpacity: 1, weight: 3 }).addTo(map);
+
+            let step = 0;
+            const total = routePoints.length;
+            const skip = Math.max(1, Math.floor(total / 120)); // Adjust speed for video length
+
+            const anim = setInterval(() => {
+                if (step >= total) {
+                    clearInterval(anim);
+                    status.innerText = "Finalizing video...";
+                    setTimeout(() => recorder.stop(), 800); // Small pause at the end
+                } else {
+                    carMarker.setLatLng(routePoints[step]);
+                    step += skip;
+                }
+            }, 50);
+        };
+    </script>
+</body>
+</html>
