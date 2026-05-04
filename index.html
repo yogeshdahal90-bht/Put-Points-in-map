@@ -2,135 +2,123 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Route Video Generator</title>
+    <title>Route Fill Generator</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background: #f0f0f0; padding: 20px; }
-        #controls { background: white; padding: 20px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-        #map { width: 800px; height: 450px; border-radius: 8px; border: 4px solid white; background: #ddd; }
-        button { padding: 10px 15px; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background: #f4f7f6; padding: 20px; }
+        #controls { background: white; padding: 20px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: flex; gap: 10px; }
+        #map { width: 800px; height: 450px; border-radius: 12px; border: 4px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        button { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
         #btn-route { background: #0078d4; color: white; }
         #btn-anim { background: #28a745; color: white; }
-        button:disabled { background: #ccc !important; cursor: not-allowed; }
-        #status { margin-top: 10px; font-weight: bold; color: #333; }
-        input { padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        button:disabled { background: #ccc !important; }
+        input { padding: 10px; border: 1px solid #ddd; border-radius: 6px; }
+        #status { margin-top: 10px; font-weight: 500; color: #555; }
     </style>
 </head>
 <body>
 
     <div id="controls">
-        <input type="text" id="start" placeholder="Start City">
-        <input type="text" id="end" placeholder="End City">
-        <button id="btn-route">1. Find Route</button>
-        <button id="btn-anim" disabled>2. Start Animation & Record</button>
+        <input type="text" id="start" placeholder="Starting City">
+        <input type="text" id="end" placeholder="Destination">
+        <button id="btn-route">1. Plan Path</button>
+        <button id="btn-anim" disabled>2. Record Fill</button>
     </div>
     <div id="map"></div>
-    <div id="status">Ready: Enter cities and click 'Find Route'</div>
+    <div id="status">Enter cities to start</div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Force Canvas for recording reliability
-        const map = L.map('map', { 
-            zoomControl: false, 
-            attributionControl: false,
-            renderer: L.canvas() 
-        }).setView([20, 0], 2);
-
+        const map = L.map('map', { zoomControl: false, attributionControl: false, renderer: L.canvas() }).setView([20, 0], 2);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+        let fullPathPoints = [];
+        let backgroundPath, foregroundPath;
         const btnRoute = document.getElementById('btn-route');
         const btnAnim = document.getElementById('btn-anim');
         const status = document.getElementById('status');
-        
-        let globalPoints = [];
-        let carCircle, routeLine;
 
-        // STEP 1: FIND THE ROUTE
         btnRoute.onclick = async () => {
             const sCity = document.getElementById('start').value;
             const eCity = document.getElementById('end').value;
-            if (!sCity || !eCity) return alert("Enter both cities");
+            if (!sCity || !eCity) return;
 
-            status.innerText = "Locating cities...";
+            status.innerText = "Finding Path...";
             btnRoute.disabled = true;
 
             try {
                 const s1 = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(sCity)}`).then(r => r.json());
                 const s2 = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(eCity)}`).then(r => r.json());
                 
-                if (!s1[0] || !s2[0]) throw new Error("Location not found");
-
                 const start = [s1[0].lat, s1[0].lon];
                 const end = [s2[0].lat, s2[0].lon];
 
                 const rData = await fetch(`https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`).then(r => r.json());
-                globalPoints = rData.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+                fullPathPoints = rData.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
 
-                if (routeLine) map.removeLayer(routeLine);
-                if (carCircle) map.removeLayer(carCircle);
+                // Draw Background "Ghost" Path
+                if (backgroundPath) map.removeLayer(backgroundPath);
+                if (foregroundPath) map.removeLayer(foregroundPath);
 
-                routeLine = L.polyline(globalPoints, {color: '#0078d4', weight: 5}).addTo(map);
-                map.fitBounds(routeLine.getBounds(), {padding: [40, 40]});
+                backgroundPath = L.polyline(fullPathPoints, {
+                    color: '#0078d4', 
+                    weight: 8, 
+                    opacity: 0.2 // Transparent fill
+                }).addTo(map);
 
-                status.innerText = "Route found! Now click 'Start Animation'";
+                map.fitBounds(backgroundPath.getBounds(), {padding: [50, 50]});
+                
+                status.innerText = "Path Ready. Click 'Record Fill'";
                 btnAnim.disabled = false;
                 btnRoute.disabled = false;
-
             } catch (e) {
-                alert("Error: " + e.message);
+                alert("Error finding route");
                 btnRoute.disabled = false;
-                status.innerText = "Error occurred.";
             }
         };
 
-        // STEP 2: ANIMATE AND RECORD
         btnAnim.onclick = () => {
-            if (globalPoints.length === 0) return;
-
             btnAnim.disabled = true;
-            btnRoute.disabled = true;
-            status.innerText = "Recording...";
+            status.innerText = "Recording Fill...";
 
             const stream = document.getElementById('map').captureStream(30);
             const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
             const chunks = [];
-            
             recorder.ondataavailable = e => chunks.push(e.data);
             recorder.onstop = () => {
                 const blob = new Blob(chunks, { type: 'video/webm' });
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(blob);
-                a.download = 'trip-export.webm';
+                a.download = 'route-fill.webm';
                 a.click();
-                
-                btnRoute.disabled = false;
-                status.innerText = "Video Saved!";
+                status.innerText = "Export Complete!";
             };
 
             recorder.start();
-            
-            // Create the "Car"
-            carCircle = L.circle(globalPoints[0], { 
-                radius: 15, 
-                color: 'white', 
-                fillColor: '#28a745', 
-                fillOpacity: 1,
-                weight: 3
+
+            // The "Filling" Logic
+            let currentPoints = [fullPathPoints[0]];
+            foregroundPath = L.polyline(currentPoints, {
+                color: '#0078d4', 
+                weight: 8, 
+                opacity: 1 
             }).addTo(map);
 
             let i = 0;
-            const total = globalPoints.length;
-            const jump = Math.max(1, Math.floor(total / 80)); // Adjust speed
-            
-            const timer = setInterval(() => {
-                if (i >= total) {
-                    clearInterval(timer);
-                    setTimeout(() => recorder.stop(), 1000); // 1s buffer at end
+            const total = fullPathPoints.length;
+            const stepSize = Math.max(1, Math.floor(total / 50)); // Number of "chunks" to fill
+
+            const interval = setInterval(() => {
+                if (i >= total - 1) {
+                    clearInterval(interval);
+                    setTimeout(() => recorder.stop(), 1000);
                 } else {
-                    carCircle.setLatLng(globalPoints[i]);
-                    i += jump;
+                    i = Math.min(i + stepSize, total - 1);
+                    // Add more points to the solid blue line
+                    currentPoints = fullPathPoints.slice(0, i + 1);
+                    foregroundPath.setLatLngs(currentPoints);
                 }
-            }, 50);
+            }, 60); // Speed of the fill
         };
     </script>
 </body>
