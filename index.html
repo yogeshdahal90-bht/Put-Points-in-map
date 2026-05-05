@@ -2,184 +2,167 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Route Snapshot Creator</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <title>3D Spatial Snapshot</title>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
     <style>
         :root {
             --accent: #f97316;
-            --panel: rgba(15, 23, 42, 0.85);
+            --glass: rgba(15, 23, 42, 0.9);
         }
 
-        body, html { 
-            margin: 0; padding: 0; height: 100%; width: 100%;
-            overflow: hidden; font-family: 'Segoe UI', sans-serif;
-            background: #000;
-        }
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
 
-        /* Full-screen map */
-        #map { position: absolute; top: 0; bottom: 0; width: 100%; z-index: 1; }
-
-        /* Floating UI Panel */
-        #ui-layer {
+        /* Compact UI */
+        #ui-panel {
             position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 10;
-            background: var(--panel);
-            backdrop-filter: blur(10px);
-            padding: 12px 20px;
-            border-radius: 50px;
+            top: 15px; left: 50%; transform: translateX(-50%);
+            z-index: 10; background: var(--glass);
+            backdrop-filter: blur(8px);
+            padding: 8px 20px; border-radius: 40px;
+            display: flex; align-items: center; gap: 10px;
             border: 1px solid rgba(255,255,255,0.1);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
 
         input {
-            background: transparent;
-            border: none;
+            background: transparent; border: none;
             border-bottom: 1px solid rgba(255,255,255,0.3);
-            color: white;
-            padding: 5px;
-            width: 120px;
-            font-size: 0.85rem;
-            outline: none;
+            color: white; padding: 4px; width: 100px; font-size: 0.8rem; outline: none;
         }
-
-        input::placeholder { color: #94a3b8; }
 
         button {
-            background: var(--accent);
-            color: white;
-            border: none;
-            padding: 8px 18px;
-            border-radius: 20px;
-            font-weight: bold;
-            font-size: 0.75rem;
-            cursor: pointer;
-            text-transform: uppercase;
-            transition: 0.2s;
+            background: var(--accent); color: white; border: none;
+            padding: 6px 15px; border-radius: 20px;
+            font-size: 0.7rem; font-weight: bold; cursor: pointer;
+            text-transform: uppercase; transition: 0.3s;
         }
 
-        button:hover { filter: brightness(1.1); transform: scale(1.05); }
-        button:disabled { background: #475569; }
+        button:hover { filter: brightness(1.2); transform: translateY(-1px); }
+        #snap-btn { background: #10b981; display: none; }
 
-        #status-pill {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 10;
-            background: rgba(0,0,0,0.6);
-            color: white;
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-size: 0.7rem;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-        }
-
-        /* Branding Overlay */
         .brand {
-            position: absolute;
-            top: 25px;
-            right: 25px;
-            z-index: 10;
-            color: white;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
-            text-align: right;
+            position: absolute; bottom: 20px; right: 20px; z-index: 5;
+            color: white; text-align: right; opacity: 0.8;
         }
-        .brand h1 { margin: 0; font-size: 1rem; letter-spacing: 1px; }
-        .brand span { font-size: 0.6rem; color: var(--accent); font-weight: bold; }
+        .brand h1 { margin: 0; font-size: 0.9rem; letter-spacing: 2px; }
+        .brand span { font-size: 0.5rem; color: var(--accent); font-weight: bold; }
     </style>
 </head>
 <body>
 
+    <div id="ui-panel">
+        <input type="text" id="origin" placeholder="From...">
+        <input type="text" id="dest" placeholder="To...">
+        <button id="trace-btn">Trace 3D</button>
+        <button id="snap-btn">Capture</button>
+    </div>
+
     <div class="brand">
-        <h1>SNAPSHOT</h1>
+        <h1>SNAPSHOT 3D</h1>
         <span>SPATIAL INVESTIGATOR</span>
     </div>
 
-    <div id="ui-layer">
-        <input type="text" id="start" placeholder="From...">
-        <input type="text" id="end" placeholder="To...">
-        <button id="btn-go">Trace & Save</button>
-    </div>
-
-    <div id="status-pill">Ready</div>
-
     <div id="map"></div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script>
-        // Initializing Map with Satellite Base (No darkening filters)
-        const map = L.map('map', { 
-            zoomControl: false, 
-            attributionControl: false,
-            preserveDrawingBuffer: true 
-        }).setView([20, 0], 2);
+        // Replace with your actual Mapbox token from mapbox.com
+        mapboxgl.accessToken = 'YOUR_MAPBOX_ACCESS_TOKEN';
 
-        // Using standard ESRI Satellite imagery for high quality and natural color
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            crossOrigin: 'anonymous'
-        }).addTo(map);
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/satellite-v9', // Natural satellite color
+            center: [0, 20],
+            zoom: 2,
+            pitch: 45, // Initial 3D tilt
+            bearing: 0,
+            antialias: true,
+            preserveDrawingBuffer: true // Required for capturing snapshots
+        });
 
-        const btn = document.getElementById('btn-go');
-        const status = document.getElementById('status-pill');
-        let routeLayer = null;
+        map.on('load', () => {
+            // Add 3D Terrain
+            map.addSource('mapbox-dem', {
+                'type': 'raster-dem',
+                'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
+                'tileSize': 512,
+                'maxzoom': 14
+            });
+            map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 1.5 });
 
-        btn.onclick = async () => {
-            const sCity = document.getElementById('start').value;
-            const eCity = document.getElementById('end').value;
-            if (!sCity || !eCity) return;
+            // Add Atmospheric Sky
+            map.addLayer({
+                'id': 'sky',
+                'type': 'sky',
+                'paint': {
+                    'sky-type': 'atmosphere',
+                    'sky-atmosphere-sun': [0.0, 0.0],
+                    'sky-atmosphere-sun-intensity': 15
+                }
+            });
+        });
 
-            if(routeLayer) map.removeLayer(routeLayer);
+        const traceBtn = document.getElementById('trace-btn');
+        const snapBtn = document.getElementById('snap-btn');
 
-            btn.disabled = true;
-            status.innerText = "Finding coordinates...";
+        traceBtn.onclick = async () => {
+            const startStr = document.getElementById('origin').value;
+            const endStr = document.getElementById('dest').value;
+            if (!startStr || !endStr) return;
+
+            traceBtn.innerText = "Finding...";
 
             try {
-                const s1 = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(sCity)}`).then(r => r.json());
-                const s2 = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(eCity)}`).then(r => r.json());
+                // Geocode both locations
+                const geoUrl = (q) => `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxgl.accessToken}`;
+                const [r1, r2] = await Promise.all([fetch(geoUrl(startStr)).then(r => r.json()), fetch(geoUrl(endStr)).then(r => r.json())]);
+
+                const p1 = r1.features[0].center;
+                const p2 = r2.features[0].center;
+
+                // Get Routing (OSRM/Mapbox)
+                const routeUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${p1[0]},${p1[1]};${p2[0]},${p2[1]}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
+                const routeData = await fetch(routeUrl).then(r => r.json());
+                const geometry = routeData.routes[0].geometry;
+
+                // Remove existing layers if any
+                if (map.getLayer('route')) { map.removeLayer('route'); map.removeSource('route'); }
+
+                map.addSource('route', { 'type': 'geojson', 'data': { 'type': 'Feature', 'geometry': geometry } });
                 
-                const start = [s1[0].lat, s1[0].lon];
-                const end = [s2[0].lat, s2[0].lon];
+                // Add the 3D high-visibility route
+                map.addLayer({
+                    'id': 'route',
+                    'type': 'line',
+                    'source': 'route',
+                    'layout': { 'line-join': 'round', 'line-cap': 'round' },
+                    'paint': {
+                        'line-color': '#f97316',
+                        'line-width': 5,
+                        'line-opacity': 0.8
+                    }
+                });
 
-                status.innerText = "Mapping path...";
-                const rData = await fetch(`https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`).then(r => r.json());
-                const points = rData.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+                // Cinematic camera move
+                const coordinates = geometry.coordinates;
+                const bounds = coordinates.reduce((acc, coord) => acc.extend(coord), new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
+                
+                map.fitBounds(bounds, { padding: 100, pitch: 60, duration: 2000 });
 
-                // High-visibility route style
-                routeLayer = L.featureGroup([
-                    L.polyline(points, {color: '#f97316', weight: 8, opacity: 0.5}),
-                    L.polyline(points, {color: '#ffffff', weight: 3, opacity: 0.9})
-                ]).addTo(map);
-
-                map.fitBounds(routeLayer.getBounds(), {padding: [100, 100]});
-
-                status.innerText = "Capturing...";
-                // Short delay to ensure tiles render
-                setTimeout(() => {
-                    html2canvas(document.getElementById('map'), { 
-                        useCORS: true,
-                        logging: false
-                    }).then(canvas => {
-                        const link = document.createElement('a');
-                        link.download = `Route-${sCity}-${eCity}.png`;
-                        link.href = canvas.toDataURL("image/png");
-                        link.click();
-                        status.innerText = "Success";
-                        btn.disabled = false;
-                    });
-                }, 1000);
+                traceBtn.innerText = "Traced";
+                snapBtn.style.display = "block";
 
             } catch (e) {
-                status.innerText = "Error locating path";
-                btn.disabled = false;
+                alert("Location not found");
+                traceBtn.innerText = "Trace 3D";
             }
+        };
+
+        snapBtn.onclick = () => {
+            const link = document.createElement('a');
+            link.download = `3D-Snapshot-${Date.now()}.png`;
+            link.href = map.getCanvas().toDataURL("image/png");
+            link.click();
         };
     </script>
 </body>
