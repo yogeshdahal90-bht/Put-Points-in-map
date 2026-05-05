@@ -1,105 +1,109 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Infrastructure Data Extractor</title>
+    <title>Asset Data Extractor</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; }
-        #controls { background: #1e293b; color: white; padding: 15px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; z-index: 1000; }
-        #map { flex-grow: 1; background: #f1f5f9; }
+        :root { --slate: #1e293b; --orange: #f97316; --green: #10b981; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; background: #0f172a; }
         
-        .group { display: flex; flex-direction: column; gap: 5px; }
-        label { font-size: 0.7rem; text-transform: uppercase; color: #94a3b8; font-weight: bold; }
-        select, button { padding: 8px; border-radius: 4px; border: none; font-size: 0.85rem; }
+        /* Dashboard UI */
+        #ui-header { background: var(--slate); color: white; padding: 20px; display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .input-group { display: flex; flex-direction: column; gap: 8px; }
+        label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; font-weight: 700; }
         
-        #layer-selector { display: flex; flex-wrap: wrap; gap: 10px; padding: 5px 0; }
-        .chip { display: flex; align-items: center; gap: 5px; background: #334155; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; cursor: pointer; border: 1px solid transparent; }
-        .chip.active { border-color: #f97316; background: #475569; }
-        
-        button { background: #f97316; color: white; cursor: pointer; font-weight: bold; margin-top: auto; }
-        button:hover { background: #ea580c; }
-        #status { position: absolute; bottom: 20px; right: 20px; background: rgba(0,0,0,0.8); color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.7rem; z-index: 1001; }
+        input, button { padding: 10px 15px; border-radius: 6px; border: none; outline: none; font-size: 0.9rem; }
+        input { background: #334155; color: white; width: 250px; border: 1px solid #475569; }
+        input:focus { border-color: var(--orange); }
+
+        .btn-trace { background: var(--orange); color: white; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-snap { background: var(--green); color: white; font-weight: bold; cursor: pointer; }
+        button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        button:disabled { background: #475569; cursor: not-allowed; }
+
+        /* Layer Toggles */
+        #layer-box { display: flex; gap: 10px; }
+        .layer-chip { 
+            background: #334155; padding: 8px 15px; border-radius: 20px; font-size: 0.8rem; 
+            cursor: pointer; border: 2px solid transparent; transition: 0.3s;
+        }
+        .layer-chip.active { border-color: var(--orange); background: #475569; }
+
+        #map { flex-grow: 1; z-index: 1; }
+        #status-bar { position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.8); color: white; padding: 8px 20px; border-radius: 30px; font-size: 0.75rem; z-index: 1000; }
     </style>
 </head>
 <body>
 
-    <div id="controls">
-        <div class="group">
-            <label>Location Search</label>
-            <input type="text" id="loc-input" placeholder="City, State, Country..." style="padding:8px; border-radius:4px;">
+    <div id="ui-header">
+        <div class="input-group">
+            <label>1. Define Area (City, State, Country)</label>
+            <input type="text" id="loc-query" placeholder="e.g. Kalgoorlie, WA">
         </div>
-        
-        <div class="group">
-            <label>Infrastructure Layers</label>
-            <div id="layer-selector">
-                <div class="chip active" data-tag="highway">Roads</div>
-                <div class="chip" data-tag="waterway">Rivers</div>
-                <div class="chip" data-tag="amenity=school">Schools</div>
-                <div class="chip" data-tag="amenity=hospital,amenity=clinic">Health</div>
-                <div class="chip" data-tag="cycleway">Cycle Tracks</div>
+
+        <div class="input-group">
+            <label>2. Select Asset Classes</label>
+            <div id="layer-box">
+                <div class="layer-chip active" data-tag="highway">Roads</div>
+                <div class="layer-chip" data-tag="waterway">Rivers</div>
+                <div class="layer-chip" data-tag="amenity=school">Schools</div>
+                <div class="layer-chip" data-tag="amenity=hospital">Health</div>
+                <div class="layer-chip" data-tag="cycleway">Cycles</div>
             </div>
         </div>
 
-        <button onclick="fetchProjectData()">Fetch & Zoom</button>
-        <button onclick="downloadPNG()" style="background:#10b981;">Snap Map</button>
+        <button class="btn-trace" onclick="runPipeline()">Fetch Assets</button>
+        <button class="btn-snap" onclick="capturePNG()">Capture PNG</button>
     </div>
 
-    <div id="status">Ready</div>
+    <div id="status-bar">System Ready</div>
     <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet-simple-map-screenshoter@0.5.0/dist/leaflet-simple-map-screenshoter.js"></script>
 
     <script>
-        const map = L.map('map', { zoomControl: false }).setView([-30.748, 121.465], 13);
+        const map = L.map('map', { zoomControl: false }).setView([20, 0], 2);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         const screenshoter = L.simpleMapScreenshoter().addTo(map);
+        let vectorLayer = L.featureGroup().addTo(map);
 
-        // UI Logic for Chips
-        document.querySelectorAll('.chip').forEach(chip => {
+        // Toggle logic for chips
+        document.querySelectorAll('.layer-chip').forEach(chip => {
             chip.onclick = () => chip.classList.toggle('active');
         });
 
-        let currentLayers = L.featureGroup().addTo(map);
+        async function runPipeline() {
+            const query = document.getElementById('loc-query').value;
+            const status = document.getElementById('status-bar');
+            if (!query) return alert("Please enter a location");
 
-        async function fetchProjectData() {
-            const loc = document.getElementById('loc-input').value;
-            const status = document.getElementById('status');
-            if(!loc) return alert("Enter a location");
-
-            status.innerText = "Geocoding location...";
+            status.innerText = "🔍 Geocoding location...";
             
             try {
-                // 1. Geocode to find the area
-                const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(loc)}`).then(r => r.json());
-                if(!geoRes.length) throw new Error("Location not found");
+                // 1. Get Coordinates from Nominatim
+                const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`).then(r => r.json());
+                if (!geoRes.length) throw new Error("Location not found");
                 
-                const { lat, lon, boundingbox } = geoRes[0];
-                map.fitBounds([[boundingbox[0], boundingbox[2]], [boundingbox[1], boundingbox[3]]]);
+                const loc = geoRes[0];
+                const bbox = [loc.boundingbox[0], loc.boundingbox[2], loc.boundingbox[1], loc.boundingbox[3]];
+                map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]]);
 
-                // 2. Build Overpass Query based on selected chips
-                status.innerText = "Querying Infrastructure...";
-                const activeTags = Array.from(document.querySelectorAll('.chip.active')).map(c => c.dataset.tag);
+                // 2. Build Overpass Query
+                status.innerText = "📡 Querying OpenStreetMap Assets...";
+                const activeTags = Array.from(document.querySelectorAll('.layer-chip.active')).map(c => c.dataset.tag);
                 
-                let queryParts = "";
+                let osmQuery = `[out:json][timeout:25];(`;
                 activeTags.forEach(tag => {
-                    if(tag.includes(',')) {
-                        tag.split(',').forEach(sub => queryParts += `node[${sub}]({{bbox}});way[${sub}]({{bbox}});`);
-                    } else if(tag.includes('=')) {
-                        queryParts += `node[${tag}]({{bbox}});way[${tag}]({{bbox}});`;
-                    } else {
-                        queryParts += `way[${tag}]({{bbox}});`;
-                    }
+                    const selector = tag.includes('=') ? `[${tag}]` : `["${tag}"]`;
+                    osmQuery += `node${selector}(${bbox.join(',')});way${selector}(${bbox.join(',')});`;
                 });
+                osmQuery += `);out geom;`;
 
-                const query = `[out:json][timeout:30];(${queryParts});out geom;`;
-                const bbox = `${map.getBounds().getSouth()},${map.getBounds().getWest()},${map.getBounds().getNorth()},${map.getBounds().getEast()}`;
-                const finalUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query.replace(/{{bbox}}/g, bbox))}`;
-
-                const data = await fetch(finalUrl).then(r => r.json());
+                const data = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(osmQuery)}`).then(r => r.json());
                 
-                // 3. Render Vector Data
-                currentLayers.clearLayers();
+                // 3. Clear and Render
+                vectorLayer.clearLayers();
                 const features = data.elements.map(el => {
                     const isPoint = el.type === 'node';
                     return {
@@ -114,29 +118,31 @@
 
                 L.geoJSON(features, {
                     style: (f) => {
-                        if (f.properties.waterway) return { color: "#0ea5e9", weight: 3 };
-                        if (f.properties.cycleway) return { color: "#8b5cf6", weight: 3, dashArray: '5,5' };
-                        return { color: "#f97316", weight: 2 };
+                        if (f.properties.waterway) return { color: "#0ea5e9", weight: 4 };
+                        if (f.properties.cycleway) return { color: "#a855f7", weight: 3, dashArray: '4,4' };
+                        return { color: "#f97316", weight: 2 }; // Roads
                     },
                     pointToLayer: (f, latlng) => {
                         return L.circleMarker(latlng, { radius: 6, fillColor: "#ef4444", color: "#fff", weight: 2, fillOpacity: 1 });
                     }
-                }).addTo(currentLayers);
+                }).addTo(vectorLayer);
 
-                status.innerText = `Loaded ${features.length} assets.`;
+                status.innerText = `✅ Loaded ${features.length} features for ${loc.display_name}`;
 
             } catch (e) {
-                status.innerText = "Error: " + e.message;
+                status.innerText = "❌ Error: " + e.message;
+                console.error(e);
             }
         }
 
-        function downloadPNG() {
+        function capturePNG() {
             screenshoter.takeScreen('blob').then(blob => {
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `Infrastructure_${Date.now()}.png`;
+                a.download = `MapExport_${Date.now()}.png`;
                 a.click();
+                document.getElementById('status-bar').innerText = "📸 Snapshot Saved!";
             });
         }
     </script>
