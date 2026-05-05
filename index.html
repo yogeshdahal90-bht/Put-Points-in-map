@@ -1,169 +1,144 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>3D Spatial Snapshot</title>
-    <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
-    <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
+    <title>Infrastructure Data Extractor</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
-        :root {
-            --accent: #f97316;
-            --glass: rgba(15, 23, 42, 0.9);
-        }
-
-        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
-        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
-
-        /* Compact UI */
-        #ui-panel {
-            position: absolute;
-            top: 15px; left: 50%; transform: translateX(-50%);
-            z-index: 10; background: var(--glass);
-            backdrop-filter: blur(8px);
-            padding: 8px 20px; border-radius: 40px;
-            display: flex; align-items: center; gap: 10px;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-
-        input {
-            background: transparent; border: none;
-            border-bottom: 1px solid rgba(255,255,255,0.3);
-            color: white; padding: 4px; width: 100px; font-size: 0.8rem; outline: none;
-        }
-
-        button {
-            background: var(--accent); color: white; border: none;
-            padding: 6px 15px; border-radius: 20px;
-            font-size: 0.7rem; font-weight: bold; cursor: pointer;
-            text-transform: uppercase; transition: 0.3s;
-        }
-
-        button:hover { filter: brightness(1.2); transform: translateY(-1px); }
-        #snap-btn { background: #10b981; display: none; }
-
-        .brand {
-            position: absolute; bottom: 20px; right: 20px; z-index: 5;
-            color: white; text-align: right; opacity: 0.8;
-        }
-        .brand h1 { margin: 0; font-size: 0.9rem; letter-spacing: 2px; }
-        .brand span { font-size: 0.5rem; color: var(--accent); font-weight: bold; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; }
+        #controls { background: #1e293b; color: white; padding: 15px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; z-index: 1000; }
+        #map { flex-grow: 1; background: #f1f5f9; }
+        
+        .group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-size: 0.7rem; text-transform: uppercase; color: #94a3b8; font-weight: bold; }
+        select, button { padding: 8px; border-radius: 4px; border: none; font-size: 0.85rem; }
+        
+        #layer-selector { display: flex; flex-wrap: wrap; gap: 10px; padding: 5px 0; }
+        .chip { display: flex; align-items: center; gap: 5px; background: #334155; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; cursor: pointer; border: 1px solid transparent; }
+        .chip.active { border-color: #f97316; background: #475569; }
+        
+        button { background: #f97316; color: white; cursor: pointer; font-weight: bold; margin-top: auto; }
+        button:hover { background: #ea580c; }
+        #status { position: absolute; bottom: 20px; right: 20px; background: rgba(0,0,0,0.8); color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.7rem; z-index: 1001; }
     </style>
 </head>
 <body>
 
-    <div id="ui-panel">
-        <input type="text" id="origin" placeholder="From...">
-        <input type="text" id="dest" placeholder="To...">
-        <button id="trace-btn">Trace 3D</button>
-        <button id="snap-btn">Capture</button>
+    <div id="controls">
+        <div class="group">
+            <label>Location Search</label>
+            <input type="text" id="loc-input" placeholder="City, State, Country..." style="padding:8px; border-radius:4px;">
+        </div>
+        
+        <div class="group">
+            <label>Infrastructure Layers</label>
+            <div id="layer-selector">
+                <div class="chip active" data-tag="highway">Roads</div>
+                <div class="chip" data-tag="waterway">Rivers</div>
+                <div class="chip" data-tag="amenity=school">Schools</div>
+                <div class="chip" data-tag="amenity=hospital,amenity=clinic">Health</div>
+                <div class="chip" data-tag="cycleway">Cycle Tracks</div>
+            </div>
+        </div>
+
+        <button onclick="fetchProjectData()">Fetch & Zoom</button>
+        <button onclick="downloadPNG()" style="background:#10b981;">Snap Map</button>
     </div>
 
-    <div class="brand">
-        <h1>SNAPSHOT 3D</h1>
-        <span>SPATIAL INVESTIGATOR</span>
-    </div>
-
+    <div id="status">Ready</div>
     <div id="map"></div>
 
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-simple-map-screenshoter@0.5.0/dist/leaflet-simple-map-screenshoter.js"></script>
+
     <script>
-        // Replace with your actual Mapbox token from mapbox.com
-        mapboxgl.accessToken = 'YOUR_MAPBOX_ACCESS_TOKEN';
+        const map = L.map('map', { zoomControl: false }).setView([-30.748, 121.465], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        const screenshoter = L.simpleMapScreenshoter().addTo(map);
 
-        const map = new mapboxgl.Map({
-            container: 'map',
-            style: 'mapbox://styles/mapbox/satellite-v9', // Natural satellite color
-            center: [0, 20],
-            zoom: 2,
-            pitch: 45, // Initial 3D tilt
-            bearing: 0,
-            antialias: true,
-            preserveDrawingBuffer: true // Required for capturing snapshots
+        // UI Logic for Chips
+        document.querySelectorAll('.chip').forEach(chip => {
+            chip.onclick = () => chip.classList.toggle('active');
         });
 
-        map.on('load', () => {
-            // Add 3D Terrain
-            map.addSource('mapbox-dem', {
-                'type': 'raster-dem',
-                'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
-                'tileSize': 512,
-                'maxzoom': 14
-            });
-            map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 1.5 });
+        let currentLayers = L.featureGroup().addTo(map);
 
-            // Add Atmospheric Sky
-            map.addLayer({
-                'id': 'sky',
-                'type': 'sky',
-                'paint': {
-                    'sky-type': 'atmosphere',
-                    'sky-atmosphere-sun': [0.0, 0.0],
-                    'sky-atmosphere-sun-intensity': 15
-                }
-            });
-        });
+        async function fetchProjectData() {
+            const loc = document.getElementById('loc-input').value;
+            const status = document.getElementById('status');
+            if(!loc) return alert("Enter a location");
 
-        const traceBtn = document.getElementById('trace-btn');
-        const snapBtn = document.getElementById('snap-btn');
-
-        traceBtn.onclick = async () => {
-            const startStr = document.getElementById('origin').value;
-            const endStr = document.getElementById('dest').value;
-            if (!startStr || !endStr) return;
-
-            traceBtn.innerText = "Finding...";
-
+            status.innerText = "Geocoding location...";
+            
             try {
-                // Geocode both locations
-                const geoUrl = (q) => `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxgl.accessToken}`;
-                const [r1, r2] = await Promise.all([fetch(geoUrl(startStr)).then(r => r.json()), fetch(geoUrl(endStr)).then(r => r.json())]);
-
-                const p1 = r1.features[0].center;
-                const p2 = r2.features[0].center;
-
-                // Get Routing (OSRM/Mapbox)
-                const routeUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${p1[0]},${p1[1]};${p2[0]},${p2[1]}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
-                const routeData = await fetch(routeUrl).then(r => r.json());
-                const geometry = routeData.routes[0].geometry;
-
-                // Remove existing layers if any
-                if (map.getLayer('route')) { map.removeLayer('route'); map.removeSource('route'); }
-
-                map.addSource('route', { 'type': 'geojson', 'data': { 'type': 'Feature', 'geometry': geometry } });
+                // 1. Geocode to find the area
+                const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(loc)}`).then(r => r.json());
+                if(!geoRes.length) throw new Error("Location not found");
                 
-                // Add the 3D high-visibility route
-                map.addLayer({
-                    'id': 'route',
-                    'type': 'line',
-                    'source': 'route',
-                    'layout': { 'line-join': 'round', 'line-cap': 'round' },
-                    'paint': {
-                        'line-color': '#f97316',
-                        'line-width': 5,
-                        'line-opacity': 0.8
+                const { lat, lon, boundingbox } = geoRes[0];
+                map.fitBounds([[boundingbox[0], boundingbox[2]], [boundingbox[1], boundingbox[3]]]);
+
+                // 2. Build Overpass Query based on selected chips
+                status.innerText = "Querying Infrastructure...";
+                const activeTags = Array.from(document.querySelectorAll('.chip.active')).map(c => c.dataset.tag);
+                
+                let queryParts = "";
+                activeTags.forEach(tag => {
+                    if(tag.includes(',')) {
+                        tag.split(',').forEach(sub => queryParts += `node[${sub}]({{bbox}});way[${sub}]({{bbox}});`);
+                    } else if(tag.includes('=')) {
+                        queryParts += `node[${tag}]({{bbox}});way[${tag}]({{bbox}});`;
+                    } else {
+                        queryParts += `way[${tag}]({{bbox}});`;
                     }
                 });
 
-                // Cinematic camera move
-                const coordinates = geometry.coordinates;
-                const bounds = coordinates.reduce((acc, coord) => acc.extend(coord), new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
-                
-                map.fitBounds(bounds, { padding: 100, pitch: 60, duration: 2000 });
+                const query = `[out:json][timeout:30];(${queryParts});out geom;`;
+                const bbox = `${map.getBounds().getSouth()},${map.getBounds().getWest()},${map.getBounds().getNorth()},${map.getBounds().getEast()}`;
+                const finalUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query.replace(/{{bbox}}/g, bbox))}`;
 
-                traceBtn.innerText = "Traced";
-                snapBtn.style.display = "block";
+                const data = await fetch(finalUrl).then(r => r.json());
+                
+                // 3. Render Vector Data
+                currentLayers.clearLayers();
+                const features = data.elements.map(el => {
+                    const isPoint = el.type === 'node';
+                    return {
+                        type: "Feature",
+                        properties: el.tags,
+                        geometry: {
+                            type: isPoint ? "Point" : "LineString",
+                            coordinates: isPoint ? [el.lon, el.lat] : el.geometry.map(p => [p.lon, p.lat])
+                        }
+                    };
+                });
+
+                L.geoJSON(features, {
+                    style: (f) => {
+                        if (f.properties.waterway) return { color: "#0ea5e9", weight: 3 };
+                        if (f.properties.cycleway) return { color: "#8b5cf6", weight: 3, dashArray: '5,5' };
+                        return { color: "#f97316", weight: 2 };
+                    },
+                    pointToLayer: (f, latlng) => {
+                        return L.circleMarker(latlng, { radius: 6, fillColor: "#ef4444", color: "#fff", weight: 2, fillOpacity: 1 });
+                    }
+                }).addTo(currentLayers);
+
+                status.innerText = `Loaded ${features.length} assets.`;
 
             } catch (e) {
-                alert("Location not found");
-                traceBtn.innerText = "Trace 3D";
+                status.innerText = "Error: " + e.message;
             }
-        };
+        }
 
-        snapBtn.onclick = () => {
-            const link = document.createElement('a');
-            link.download = `3D-Snapshot-${Date.now()}.png`;
-            link.href = map.getCanvas().toDataURL("image/png");
-            link.click();
-        };
+        function downloadPNG() {
+            screenshoter.takeScreen('blob').then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Infrastructure_${Date.now()}.png`;
+                a.click();
+            });
+        }
     </script>
 </body>
 </html>
