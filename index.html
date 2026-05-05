@@ -1,148 +1,154 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Asset Data Extractor</title>
+    <meta charset="UTF-8">
+    <title>Coordinate Asset Mapper</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
-        :root { --slate: #1e293b; --orange: #f97316; --green: #10b981; }
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; background: #0f172a; }
+        body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; overflow: hidden; }
         
-        /* Dashboard UI */
-        #ui-header { background: var(--slate); color: white; padding: 20px; display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .input-group { display: flex; flex-direction: column; gap: 8px; }
-        label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; font-weight: 700; }
-        
-        input, button { padding: 10px 15px; border-radius: 6px; border: none; outline: none; font-size: 0.9rem; }
-        input { background: #334155; color: white; width: 250px; border: 1px solid #475569; }
-        input:focus { border-color: var(--orange); }
-
-        .btn-trace { background: var(--orange); color: white; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .btn-snap { background: var(--green); color: white; font-weight: bold; cursor: pointer; }
-        button:hover { filter: brightness(1.1); transform: translateY(-1px); }
-        button:disabled { background: #475569; cursor: not-allowed; }
-
-        /* Layer Toggles */
-        #layer-box { display: flex; gap: 10px; }
-        .layer-chip { 
-            background: #334155; padding: 8px 15px; border-radius: 20px; font-size: 0.8rem; 
-            cursor: pointer; border: 2px solid transparent; transition: 0.3s;
+        /* Input Panel */
+        #panel { 
+            width: 380px; background: #2c3e50; color: white; padding: 20px; 
+            display: flex; flex-direction: column; gap: 15px; box-sizing: border-box;
+            z-index: 1000; box-shadow: 5px 0 15px rgba(0,0,0,0.3);
         }
-        .layer-chip.active { border-color: var(--orange); background: #475569; }
 
-        #map { flex-grow: 1; z-index: 1; }
-        #status-bar { position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.8); color: white; padding: 8px 20px; border-radius: 30px; font-size: 0.75rem; z-index: 1000; }
+        h2 { font-size: 1.1rem; margin: 0; color: #ecf0f1; border-bottom: 1px solid #5d6d7e; padding-bottom: 10px; }
+        
+        .format-hint { font-size: 0.75rem; color: #bdc3c7; background: #34495e; padding: 8px; border-radius: 4px; line-height: 1.4; }
+        
+        textarea { 
+            width: 100%; height: 150px; background: #ecf0f1; border: none; border-radius: 4px;
+            padding: 10px; box-sizing: border-box; font-family: monospace; font-size: 0.85rem;
+        }
+
+        /* Icon Grid */
+        .icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .icon-btn { 
+            background: #34495e; border: 2px solid transparent; border-radius: 6px; 
+            padding: 10px; font-size: 1.5rem; cursor: pointer; text-align: center; transition: 0.2s;
+        }
+        .icon-btn:hover { background: #5d6d7e; }
+        .icon-btn.selected { border-color: #3498db; background: #5d6d7e; }
+
+        button.main-btn { 
+            padding: 12px; border: none; border-radius: 4px; font-weight: bold; 
+            cursor: pointer; text-transform: uppercase; letter-spacing: 1px;
+        }
+        #plot-btn { background: #3498db; color: white; }
+        #snap-btn { background: #27ae60; color: white; }
+        button:active { transform: scale(0.98); }
+
+        /* Map Area */
+        #map { flex-grow: 1; z-index: 1; background: #1a1a1a; }
     </style>
 </head>
 <body>
 
-    <div id="ui-header">
-        <div class="input-group">
-            <label>1. Define Area (City, State, Country)</label>
-            <input type="text" id="loc-query" placeholder="e.g. Kalgoorlie, WA">
+    <div id="panel">
+        <h2>Asset Input</h2>
+        <div class="format-hint">
+            <strong>Format:</strong> Label, Longitude, Latitude<br>
+            <em>Example:</em><br>
+            Point 1, 92.13, 42.32<br>
+            Hospital Point, 92.122, 41.352
+        </div>
+        
+        <textarea id="data-input" placeholder="Enter coordinates here..."></textarea>
+
+        <h2>Select Icon</h2>
+        <div class="icon-grid">
+            <div class="icon-btn selected" data-icon="📍">📍</div>
+            <div class="icon-btn" data-icon="🏥">🏥</div>
+            <div class="icon-btn" data-icon="🏫">🏫</div>
+            <div class="icon-btn" data-icon="🏗️">🏗️</div>
+            <div class="icon-btn" data-icon="🚩">🚩</div>
+            <div class="icon-btn" data-icon="🚧">🚧</div>
+            <div class="icon-btn" data-icon="💧">💧</div>
+            <div class="icon-btn" data-icon="🌳">🌳</div>
         </div>
 
-        <div class="input-group">
-            <label>2. Select Asset Classes</label>
-            <div id="layer-box">
-                <div class="layer-chip active" data-tag="highway">Roads</div>
-                <div class="layer-chip" data-tag="waterway">Rivers</div>
-                <div class="layer-chip" data-tag="amenity=school">Schools</div>
-                <div class="layer-chip" data-tag="amenity=hospital">Health</div>
-                <div class="layer-chip" data-tag="cycleway">Cycles</div>
-            </div>
-        </div>
-
-        <button class="btn-trace" onclick="runPipeline()">Fetch Assets</button>
-        <button class="btn-snap" onclick="capturePNG()">Capture PNG</button>
+        <button id="plot-btn" class="main-btn" onclick="plotToMap()">Show Points on Map</button>
+        <button id="snap-btn" class="main-btn" onclick="captureSnapshot()">Snap Image</button>
     </div>
 
-    <div id="status-bar">System Ready</div>
     <div id="map"></div>
 
+    <!-- Leaflet & Screenshot Engine -->
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet-simple-map-screenshoter@0.5.0/dist/leaflet-simple-map-screenshoter.js"></script>
 
     <script>
-        const map = L.map('map', { zoomControl: false }).setView([20, 0], 2);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-        const screenshoter = L.simpleMapScreenshoter().addTo(map);
-        let vectorLayer = L.featureGroup().addTo(map);
+        // Setup Map with Satellite View
+        const map = L.map('map', { zoomControl: true }).setView([0, 0], 2);
+        
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Esri Satellite'
+        }).addTo(map);
 
-        // Toggle logic for chips
-        document.querySelectorAll('.layer-chip').forEach(chip => {
-            chip.onclick = () => chip.classList.toggle('active');
+        const markerLayer = L.featureGroup().addTo(map);
+        const screenshoter = L.simpleMapScreenshoter().addTo(map);
+        let activeEmoji = "📍";
+
+        // Handle Icon Selection
+        document.querySelectorAll('.icon-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelector('.icon-btn.selected').classList.remove('selected');
+                btn.classList.add('selected');
+                activeEmoji = btn.dataset.icon;
+            });
         });
 
-        async function runPipeline() {
-            const query = document.getElementById('loc-query').value;
-            const status = document.getElementById('status-bar');
-            if (!query) return alert("Please enter a location");
+        function plotToMap() {
+            const rawData = document.getElementById('data-input').value;
+            const lines = rawData.split('\n');
+            markerLayer.clearLayers();
 
-            status.innerText = "🔍 Geocoding location...";
-            
-            try {
-                // 1. Get Coordinates from Nominatim
-                const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`).then(r => r.json());
-                if (!geoRes.length) throw new Error("Location not found");
+            lines.forEach(line => {
+                if (!line.trim()) return;
                 
-                const loc = geoRes[0];
-                const bbox = [loc.boundingbox[0], loc.boundingbox[2], loc.boundingbox[1], loc.boundingbox[3]];
-                map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]]);
+                // Splitting by comma
+                const parts = line.split(',');
+                if (parts.length < 3) return;
 
-                // 2. Build Overpass Query
-                status.innerText = "📡 Querying OpenStreetMap Assets...";
-                const activeTags = Array.from(document.querySelectorAll('.layer-chip.active')).map(c => c.dataset.tag);
-                
-                let osmQuery = `[out:json][timeout:25];(`;
-                activeTags.forEach(tag => {
-                    const selector = tag.includes('=') ? `[${tag}]` : `["${tag}"]`;
-                    osmQuery += `node${selector}(${bbox.join(',')});way${selector}(${bbox.join(',')});`;
-                });
-                osmQuery += `);out geom;`;
+                const label = parts[0].trim();
+                const lon = parseFloat(parts[1].trim());
+                const lat = parseFloat(parts[2].trim());
 
-                const data = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(osmQuery)}`).then(r => r.json());
-                
-                // 3. Clear and Render
-                vectorLayer.clearLayers();
-                const features = data.elements.map(el => {
-                    const isPoint = el.type === 'node';
-                    return {
-                        type: "Feature",
-                        properties: el.tags,
-                        geometry: {
-                            type: isPoint ? "Point" : "LineString",
-                            coordinates: isPoint ? [el.lon, el.lat] : el.geometry.map(p => [p.lon, p.lat])
-                        }
-                    };
-                });
+                if (!isNaN(lat) && !isNaN(lon)) {
+                    // Create Custom Marker
+                    const customIcon = L.divIcon({
+                        html: `<div style="font-size: 30px; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));">${activeEmoji}</div>`,
+                        className: 'dummy-class',
+                        iconSize: [35, 35],
+                        iconAnchor: [17, 30]
+                    });
 
-                L.geoJSON(features, {
-                    style: (f) => {
-                        if (f.properties.waterway) return { color: "#0ea5e9", weight: 4 };
-                        if (f.properties.cycleway) return { color: "#a855f7", weight: 3, dashArray: '4,4' };
-                        return { color: "#f97316", weight: 2 }; // Roads
-                    },
-                    pointToLayer: (f, latlng) => {
-                        return L.circleMarker(latlng, { radius: 6, fillColor: "#ef4444", color: "#fff", weight: 2, fillOpacity: 1 });
-                    }
-                }).addTo(vectorLayer);
+                    L.marker([lat, lon], { icon: customIcon })
+                        .bindTooltip(label, { 
+                            permanent: true, 
+                            direction: 'top', 
+                            offset: [0, -25],
+                            className: 'map-label'
+                        })
+                        .addTo(markerLayer);
+                }
+            });
 
-                status.innerText = `✅ Loaded ${features.length} features for ${loc.display_name}`;
-
-            } catch (e) {
-                status.innerText = "❌ Error: " + e.message;
-                console.error(e);
+            // Auto-zoom to the points
+            if (markerLayer.getLayers().length > 0) {
+                map.fitBounds(markerLayer.getBounds(), { padding: [100, 100] });
             }
         }
 
-        function capturePNG() {
+        function captureSnapshot() {
             screenshoter.takeScreen('blob').then(blob => {
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `MapExport_${Date.now()}.png`;
+                a.download = `Map_Capture_${Date.now()}.png`;
                 a.click();
-                document.getElementById('status-bar').innerText = "📸 Snapshot Saved!";
             });
         }
     </script>
