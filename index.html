@@ -2,113 +2,137 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Coordinate Asset Mapper</title>
+    <title>Professional Asset Mapper</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
-        body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; overflow: hidden; }
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; overflow: hidden; }
         
-        /* Input Panel */
+        /* Sidebar */
         #panel { 
-            width: 380px; background: #2c3e50; color: white; padding: 20px; 
+            width: 380px; background: #1e293b; color: white; padding: 20px; 
             display: flex; flex-direction: column; gap: 15px; box-sizing: border-box;
-            z-index: 1000; box-shadow: 5px 0 15px rgba(0,0,0,0.3);
+            z-index: 1000; box-shadow: 5px 0 15px rgba(0,0,0,0.5);
         }
 
-        h2 { font-size: 1.1rem; margin: 0; color: #ecf0f1; border-bottom: 1px solid #5d6d7e; padding-bottom: 10px; }
-        
-        .format-hint { font-size: 0.75rem; color: #bdc3c7; background: #34495e; padding: 8px; border-radius: 4px; line-height: 1.4; }
-        
-        textarea { 
-            width: 100%; height: 150px; background: #ecf0f1; border: none; border-radius: 4px;
-            padding: 10px; box-sizing: border-box; font-family: monospace; font-size: 0.85rem;
-        }
+        h2 { font-size: 0.9rem; margin: 0; color: #f97316; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #334155; padding-bottom: 8px; }
+        .format-hint { font-size: 0.75rem; color: #94a3b8; background: #0f172a; padding: 10px; border-radius: 4px; line-height: 1.4; }
+        textarea { width: 100%; height: 120px; background: #334155; border: 1px solid #475569; border-radius: 4px; color: white; padding: 10px; box-sizing: border-box; font-family: monospace; font-size: 0.85rem; }
 
         /* Icon Grid */
-        .icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-        .icon-btn { 
-            background: #34495e; border: 2px solid transparent; border-radius: 6px; 
-            padding: 10px; font-size: 1.5rem; cursor: pointer; text-align: center; transition: 0.2s;
-        }
-        .icon-btn:hover { background: #5d6d7e; }
-        .icon-btn.selected { border-color: #3498db; background: #5d6d7e; }
+        .icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+        .icon-btn { background: #334155; border: 2px solid transparent; border-radius: 6px; padding: 8px; font-size: 1.4rem; cursor: pointer; text-align: center; }
+        .icon-btn.selected { border-color: #f97316; background: #475569; }
 
-        button.main-btn { 
-            padding: 12px; border: none; border-radius: 4px; font-weight: bold; 
-            cursor: pointer; text-transform: uppercase; letter-spacing: 1px;
-        }
-        #plot-btn { background: #3498db; color: white; }
-        #snap-btn { background: #27ae60; color: white; }
-        button:active { transform: scale(0.98); }
+        button.main-btn { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: 0.2s; }
+        #plot-btn { background: #f97316; color: white; }
+        #snap-btn { background: #10b981; color: white; }
 
-        /* Map Area */
-        #map { flex-grow: 1; z-index: 1; background: #1a1a1a; }
+        /* Map & GIS Elements */
+        #map-container { flex-grow: 1; position: relative; }
+        #map { width: 100%; height: 100%; background: #0f172a; }
+
+        /* North Arrow Overlay */
+        #north-arrow {
+            position: absolute; top: 20px; right: 20px; z-index: 1000;
+            width: 50px; filter: drop-shadow(0 0 5px rgba(0,0,0,0.5));
+            pointer-events: none;
+        }
+
+        /* Locator Map Style */
+        #locator-map {
+            position: absolute; bottom: 30px; right: 20px; z-index: 1000;
+            width: 180px; height: 130px; border: 2px solid white;
+            border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            background: white;
+        }
     </style>
 </head>
 <body>
 
     <div id="panel">
-        <h2>Asset Input</h2>
-        <div class="format-hint">
-            <strong>Format:</strong> Label, Longitude, Latitude<br>
-            <em>Example:</em><br>
-            Point 1, 92.13, 42.32<br>
-            Hospital Point, 92.122, 41.352
-        </div>
-        
-        <textarea id="data-input" placeholder="Enter coordinates here..."></textarea>
+        <h2>1. Coordinate Input</h2>
+        <div class="format-hint"><strong>Label, Long, Lat</strong><br>Example: Maintenance Hole, 121.46, -30.74</div>
+        <textarea id="data-input" placeholder="Point A, 121.47, -30.75"></textarea>
 
-        <h2>Select Icon</h2>
+        <h2>2. Asset Symbol</h2>
         <div class="icon-grid">
             <div class="icon-btn selected" data-icon="📍">📍</div>
             <div class="icon-btn" data-icon="🏥">🏥</div>
             <div class="icon-btn" data-icon="🏫">🏫</div>
-            <div class="icon-btn" data-icon="🏗️">🏗️</div>
-            <div class="icon-btn" data-icon="🚩">🚩</div>
             <div class="icon-btn" data-icon="🚧">🚧</div>
             <div class="icon-btn" data-icon="💧">💧</div>
-            <div class="icon-btn" data-icon="🌳">🌳</div>
+            <div class="icon-btn" data-icon="⚡">⚡</div>
+            <div class="icon-btn" data-icon="🏗️">🏗️</div>
+            <div class="icon-btn" data-icon="🚩">🚩</div>
         </div>
 
-        <button id="plot-btn" class="main-btn" onclick="plotToMap()">Show Points on Map</button>
-        <button id="snap-btn" class="main-btn" onclick="captureSnapshot()">Snap Image</button>
+        <button id="plot-btn" class="main-btn" onclick="plotToMap()">Generate Map</button>
+        <button id="snap-btn" class="main-btn" onclick="captureSnapshot()">Export PNG</button>
     </div>
 
-    <div id="map"></div>
+    <div id="map-container">
+        <div id="map"></div>
+        
+        <!-- North Arrow SVG -->
+        <svg id="north-arrow" viewBox="0 0 100 100">
+            <path d="M50 5 L15 85 L50 70 L85 85 Z" fill="white" stroke="black" stroke-width="2"/>
+            <text x="50" y="100" text-anchor="middle" fill="white" font-weight="bold" font-family="sans-serif">N</text>
+        </svg>
 
-    <!-- Leaflet & Screenshot Engine -->
+        <!-- Mini Locator Map -->
+        <div id="locator-map"></div>
+    </div>
+
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet-simple-map-screenshoter@0.5.0/dist/leaflet-simple-map-screenshoter.js"></script>
 
     <script>
-        // Setup Map with Satellite View
-        const map = L.map('map', { zoomControl: true }).setView([0, 0], 2);
-        
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        // MAIN MAP SETUP
+        const map = L.map('map', { zoomControl: false }).setView([-30.748, 121.465], 13);
+        const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             attribution: 'Esri Satellite'
         }).addTo(map);
 
+        // SCALE BAR
+        L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
+
+        // LOCATOR MAP SETUP
+        const locatorMap = L.map('locator-map', {
+            attributionControl: false,
+            zoomControl: false,
+            dragging: false,
+            scrollWheelZoom: false,
+            doubleClickZoom: false
+        }).setView([-30.748, 121.465], 5);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(locatorMap);
+
+        // Sync Locator Map with Main Map
+        map.on('move', () => {
+            locatorMap.setView(map.getCenter(), Math.max(0, map.getZoom() - 6));
+        });
+
         const markerLayer = L.featureGroup().addTo(map);
-        const screenshoter = L.simpleMapScreenshoter().addTo(map);
+        const screenshoter = L.simpleMapScreenshoter({
+            hidden: true // Keep the default UI button hidden
+        }).addTo(map);
+        
         let activeEmoji = "📍";
 
-        // Handle Icon Selection
         document.querySelectorAll('.icon-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.onclick = () => {
                 document.querySelector('.icon-btn.selected').classList.remove('selected');
                 btn.classList.add('selected');
                 activeEmoji = btn.dataset.icon;
-            });
+            };
         });
 
         function plotToMap() {
-            const rawData = document.getElementById('data-input').value;
-            const lines = rawData.split('\n');
+            const lines = document.getElementById('data-input').value.split('\n');
             markerLayer.clearLayers();
 
             lines.forEach(line => {
                 if (!line.trim()) return;
-                
-                // Splitting by comma
                 const parts = line.split(',');
                 if (parts.length < 3) return;
 
@@ -117,37 +141,31 @@
                 const lat = parseFloat(parts[2].trim());
 
                 if (!isNaN(lat) && !isNaN(lon)) {
-                    // Create Custom Marker
-                    const customIcon = L.divIcon({
-                        html: `<div style="font-size: 30px; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));">${activeEmoji}</div>`,
-                        className: 'dummy-class',
-                        iconSize: [35, 35],
-                        iconAnchor: [17, 30]
+                    const icon = L.divIcon({
+                        html: `<div style="font-size: 28px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));">${activeEmoji}</div>`,
+                        className: 'asset-marker',
+                        iconSize: [30, 30],
+                        iconAnchor: [15, 25]
                     });
 
-                    L.marker([lat, lon], { icon: customIcon })
-                        .bindTooltip(label, { 
-                            permanent: true, 
-                            direction: 'top', 
-                            offset: [0, -25],
-                            className: 'map-label'
-                        })
+                    L.marker([lat, lon], { icon: icon })
+                        .bindTooltip(label, { permanent: true, direction: 'top', offset: [0, -20] })
                         .addTo(markerLayer);
                 }
             });
 
-            // Auto-zoom to the points
             if (markerLayer.getLayers().length > 0) {
-                map.fitBounds(markerLayer.getBounds(), { padding: [100, 100] });
+                map.fitBounds(markerLayer.getBounds(), { padding: [80, 80] });
             }
         }
 
         function captureSnapshot() {
+            // Include everything in the map-container for the snapshot
             screenshoter.takeScreen('blob').then(blob => {
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `Map_Capture_${Date.now()}.png`;
+                a.download = `Asset_Plan_${Date.now()}.png`;
                 a.click();
             });
         }
